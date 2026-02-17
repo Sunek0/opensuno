@@ -1,0 +1,23 @@
+{
+  "compilerOptions": {
+    "lib": ["esnext"],
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "outDir": "dist/mcp",
+    "rootDir": "src",
+    "declaration": false,
+    "paths": {
+      "@/*": ["./src/*"],
+      "playwright-core": ["./node_modules/rebrowser-playwright-core"]
+    }
+  },
+  "include": ["src/mcp/**/*.ts", "src/lib/**/*.ts"],
+  "exclude": ["node_modules"]
+}

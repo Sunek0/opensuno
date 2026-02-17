@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Suno API Bridge</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <h1>Suno API Bridge</h1>
+
+    <div class="status-row">
+      <span class="label">Status</span>
+      <span id="status" class="badge disconnected">Disconnected</span>
+    </div>
+
+    <div class="field">
+      <label for="bridgeUrl">Bridge Server URL</label>
+      <input type="text" id="bridgeUrl" placeholder="ws://localhost:3000/ws">
+    </div>
+
+    <button id="saveBtn">Save</button>
+
+    <div class="status-row">
+      <span class="label">Suno Tab</span>
+      <span id="tabStatus" class="value">—</span>
+    </div>
+
+    <div class="log-section">
+      <span class="label">Recent Requests</span>
+      <div id="requestLog" class="log"></div>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

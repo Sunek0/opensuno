@@ -1,0 +1,37 @@
+{
+  "manifest_version": 3,
+  "name": "OpenSuno Bridge",
+  "version": "1.0.0",
+  "description": "Bridges local API/MCP requests to Suno via browser authentication",
+  "permissions": ["activeTab", "storage"],
+  "host_permissions": ["https://*.suno.com/*", "https://studio-api.prod.suno.com/*"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://suno.com/*", "https://*.suno.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["page-script.js"],
+      "matches": ["https://suno.com/*", "https://*.suno.com/*"]
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}
