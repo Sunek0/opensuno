@@ -451,7 +451,6 @@ LGPL-3.0-or-later — see [LICENSE](LICENSE).
 ## Acknowledgments
 
 - Built with [Claude Code](https://claude.ai/claude-code) & [Paean AI](https://github.com/paean-ai/)
-- Based on [gcui-art/suno-api](https://github.com/gcui-art/suno-api)
 - [Suno AI](https://suno.ai) — the music generation service
 
 ## Disclaimer
