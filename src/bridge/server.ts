@@ -119,6 +119,7 @@ function addCorsHeaders(resp: Response): Response {
 // --- Start the server ---
 const server = Bun.serve({
   port: PORT,
+  idleTimeout: 120,
 
   async fetch(req, server) {
     const url = new URL(req.url);
