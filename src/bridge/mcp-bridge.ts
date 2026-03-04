@@ -212,8 +212,8 @@ export function createBridgeMcpServer(wsManager: WebSocketManager) {
       try {
         let url = '/api/feed/v2';
         const params = new URLSearchParams();
-        const parsedIds = parseClipIds(ids);
-        if (parsedIds.length > 0) params.set('ids', parsedIds.join(','));
+        const requestedIds = parseClipIds(ids);
+        if (requestedIds.length > 0) params.set('ids', requestedIds.join(','));
         if (page) params.set('page', page);
         const qs = params.toString();
         if (qs) url += `?${qs}`;
@@ -231,13 +231,18 @@ export function createBridgeMcpServer(wsManager: WebSocketManager) {
         // Suno may return empty feed results for freshly submitted IDs.
         // Fallback to direct /api/clip/{id} calls when specific IDs were requested.
         let clips = feedClips;
-        if (clips.length === 0 && parsedIds.length > 0) {
-          clips = await fetchClipsByIds(wsManager, parsedIds);
-        }
 
-        const normalized = clips.map(normalizeClip);
-        if (normalized.length > 0 || parsedIds.length > 0) {
-          return { content: [{ type: 'text' as const, text: JSON.stringify(normalized, null, 2) }] };
+        if (requestedIds.length > 0) {
+          clips = filterClipsByRequestedIds(feedClips, requestedIds);
+
+          const missingIds = getMissingClipIds(clips, requestedIds);
+          if (missingIds.length > 0) {
+            const fallbackClips = await fetchClipsByIds(wsManager, missingIds);
+            clips = [...clips, ...fallbackClips];
+          }
+
+          const orderedRequestedClips = orderClipsByRequestedIds(clips, requestedIds);
+          return { content: [{ type: 'text' as const, text: JSON.stringify(orderedRequestedClips.map(normalizeClip), null, 2) }] };
         }
 
         const fallbackResult = Array.isArray(feedData) ? feedData : feedData?.clips || [];
@@ -382,7 +387,7 @@ function buildPayload(opts: any, isCustom: boolean) {
 /** Poll clips until done */
 async function pollClips(wsManager: WebSocketManager, clipIds: string[], timeoutMs = 100_000) {
   const start = Date.now();
-  const normalizedIds = parseClipIds(clipIds.join(','));
+  const normalizedIds = parseClipIds(clipIds);
   await new Promise((r) => setTimeout(r, 5000));
 
   while (Date.now() - start < timeoutMs) {
@@ -394,15 +399,24 @@ async function pollClips(wsManager: WebSocketManager, clipIds: string[], timeout
     const feedData = resp.result?.data;
     let clips = Array.isArray(feedData?.clips) ? feedData.clips : [];
 
-    if (clips.length === 0 && normalizedIds.length > 0) {
-      clips = await fetchClipsByIds(wsManager, normalizedIds);
+    if (normalizedIds.length > 0) {
+      clips = filterClipsByRequestedIds(clips, normalizedIds);
+
+      const missingIds = getMissingClipIds(clips, normalizedIds);
+      if (missingIds.length > 0) {
+        const fallbackClips = await fetchClipsByIds(wsManager, missingIds);
+        clips = [...clips, ...fallbackClips];
+      }
+
+      clips = orderClipsByRequestedIds(clips, normalizedIds);
     }
 
     if (clips.length > 0) {
+      const hasAllRequestedClips = normalizedIds.every((id) => clips.some((clip: any) => clip.id === id));
       const allDone = clips.every((c: any) =>
         c.status === 'streaming' || c.status === 'complete' || c.status === 'error'
       );
-      if (allDone) return clips.map(normalizeClip);
+      if (hasAllRequestedClips && allDone) return clips.map(normalizeClip);
     }
 
     await new Promise((r) => setTimeout(r, 4000));
@@ -410,11 +424,50 @@ async function pollClips(wsManager: WebSocketManager, clipIds: string[], timeout
   return [];
 }
 
-function parseClipIds(ids?: string): string[] {
+function parseClipIds(ids?: string | string[] | null): string[] {
   if (!ids) return [];
-  return ids
-    .split(',')
-    .map((value) => value.trim())
+
+  if (Array.isArray(ids)) {
+    return [...new Set(ids.map((value) => String(value).trim()).filter(Boolean))];
+  }
+
+  const raw = ids.trim();
+  if (!raw) return [];
+
+  if (raw.startsWith('[') && raw.endsWith(']')) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        return [...new Set(parsed.map((value) => String(value).trim()).filter(Boolean))];
+      }
+    } catch {
+      // Fallback to CSV parsing below
+    }
+  }
+
+  return [...new Set(raw.split(',').map((value) => value.trim()).filter(Boolean))];
+}
+
+function filterClipsByRequestedIds(clips: any[], requestedIds: string[]) {
+  const requestedIdSet = new Set(requestedIds);
+  return clips.filter((clip: any) => requestedIdSet.has(clip?.id));
+}
+
+function getMissingClipIds(clips: any[], requestedIds: string[]) {
+  const foundIds = new Set(clips.map((clip: any) => clip?.id).filter(Boolean));
+  return requestedIds.filter((id) => !foundIds.has(id));
+}
+
+function orderClipsByRequestedIds(clips: any[], requestedIds: string[]) {
+  const clipById = new Map<string, any>();
+  for (const clip of clips) {
+    if (clip?.id && !clipById.has(clip.id)) {
+      clipById.set(clip.id, clip);
+    }
+  }
+
+  return requestedIds
+    .map((id) => clipById.get(id))
     .filter(Boolean);
 }
 
