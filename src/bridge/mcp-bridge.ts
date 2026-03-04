@@ -212,15 +212,36 @@ export function createBridgeMcpServer(wsManager: WebSocketManager) {
       try {
         let url = '/api/feed/v2';
         const params = new URLSearchParams();
-        if (ids) params.set('ids', ids);
+        const parsedIds = parseClipIds(ids);
+        if (parsedIds.length > 0) params.set('ids', parsedIds.join(','));
         if (page) params.set('page', page);
         const qs = params.toString();
         if (qs) url += `?${qs}`;
 
         const resp = await wsManager.sendRequest('api_call', { url, method: 'GET' });
         if (resp.error) throw new Error(resp.error.message);
-        const clips = resp.result!.data.clips?.map(normalizeClip) || resp.result!.data;
-        return { content: [{ type: 'text' as const, text: JSON.stringify(clips, null, 2) }] };
+
+        const feedData = resp.result?.data;
+        const feedClips = Array.isArray(feedData?.clips)
+          ? feedData.clips
+          : Array.isArray(feedData)
+            ? feedData
+            : [];
+
+        // Suno may return empty feed results for freshly submitted IDs.
+        // Fallback to direct /api/clip/{id} calls when specific IDs were requested.
+        let clips = feedClips;
+        if (clips.length === 0 && parsedIds.length > 0) {
+          clips = await fetchClipsByIds(wsManager, parsedIds);
+        }
+
+        const normalized = clips.map(normalizeClip);
+        if (normalized.length > 0 || parsedIds.length > 0) {
+          return { content: [{ type: 'text' as const, text: JSON.stringify(normalized, null, 2) }] };
+        }
+
+        const fallbackResult = Array.isArray(feedData) ? feedData : feedData?.clips || [];
+        return { content: [{ type: 'text' as const, text: JSON.stringify(fallbackResult, null, 2) }] };
       } catch (error: any) {
         return { content: [{ type: 'text' as const, text: `Error: ${error.message}` }], isError: true };
       }
@@ -361,23 +382,68 @@ function buildPayload(opts: any, isCustom: boolean) {
 /** Poll clips until done */
 async function pollClips(wsManager: WebSocketManager, clipIds: string[], timeoutMs = 100_000) {
   const start = Date.now();
+  const normalizedIds = parseClipIds(clipIds.join(','));
   await new Promise((r) => setTimeout(r, 5000));
 
   while (Date.now() - start < timeoutMs) {
     const resp = await wsManager.sendRequest('api_call', {
-      url: `/api/feed/v2?ids=${clipIds.join(',')}`,
+      url: `/api/feed/v2?ids=${normalizedIds.join(',')}`,
       method: 'GET',
     });
-    if (resp.result?.data?.clips) {
-      const clips = resp.result.data.clips;
-      const allDone = clips.every(
-        (c: any) => c.status === 'streaming' || c.status === 'complete' || c.status === 'error'
+
+    const feedData = resp.result?.data;
+    let clips = Array.isArray(feedData?.clips) ? feedData.clips : [];
+
+    if (clips.length === 0 && normalizedIds.length > 0) {
+      clips = await fetchClipsByIds(wsManager, normalizedIds);
+    }
+
+    if (clips.length > 0) {
+      const allDone = clips.every((c: any) =>
+        c.status === 'streaming' || c.status === 'complete' || c.status === 'error'
       );
       if (allDone) return clips.map(normalizeClip);
     }
+
     await new Promise((r) => setTimeout(r, 4000));
   }
   return [];
+}
+
+function parseClipIds(ids?: string): string[] {
+  if (!ids) return [];
+  return ids
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean);
+}
+
+async function fetchClipsByIds(wsManager: WebSocketManager, ids: string[]) {
+  const clips = await Promise.all(
+    ids.map(async (id) => {
+      try {
+        const resp = await wsManager.sendRequest('api_call', {
+          url: `/api/clip/${id}`,
+          method: 'GET',
+        });
+
+        if (resp.error) {
+          return null;
+        }
+
+        const data = resp.result?.data;
+        if (!data) {
+          return null;
+        }
+
+        return data.clip ?? data;
+      } catch {
+        return null;
+      }
+    })
+  );
+
+  return clips.filter(Boolean) as any[];
 }
 
 function normalizeClip(clip: any) {
